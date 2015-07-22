@@ -16,7 +16,7 @@ func TestClient(t *testing.T) {
 	rpc.AddHandler("test", myClientHandler)
 	c, _ := NewClient(dsn, qName, "text/plain")
 	c.Timeout = time.Second
-	resp, err := c.Call([]byte(`{"cmd": "test", "payload": [65,66,67]}`))
+	resp, err := c.Call("test", []byte(`ABC`))
 	if err != nil {
 		t.Errorf("Error getting response: %s", err)
 	}

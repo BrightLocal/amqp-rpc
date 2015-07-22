@@ -7,6 +7,7 @@ import (
 
 	"github.com/streadway/amqp"
 )
+
 // Arguments: contentType, body. Return values: contentType, response
 type RPCHandler func(string, []byte) (string, []byte)
 
@@ -14,6 +15,7 @@ type RPCServer struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 	messages   <-chan amqp.Delivery
+	shutdown   chan struct{}
 	handlers   map[string]RPCHandler
 }
 
@@ -23,7 +25,10 @@ type rawRpcMessage struct {
 }
 
 func NewServer(dsn, name string) (*RPCServer, error) {
-	rpc := &RPCServer{handlers: make(map[string]RPCHandler)}
+	rpc := &RPCServer{
+		handlers: make(map[string]RPCHandler),
+		shutdown: make(chan struct{}),
+	}
 	var err error
 	rpc.connection, err = amqp.Dial(dsn)
 	if err != nil {
@@ -89,31 +94,36 @@ func (r *RPCServer) Shutdown() {
 }
 
 func (r *RPCServer) run() {
-	for d := range r.messages {
-		var msg rawRpcMessage
-		var response []byte
-		contentType := "text/json"
-		if err := json.Unmarshal(d.Body, &msg); err != nil {
-			response = []byte(fmt.Sprintf(`{"result": false, "error": %q}`, err))
-		} else {
-			if fn, ok := r.handlers[msg.Cmd]; ok {
-				contentType, response = fn(d.ContentType, msg.Payload)
+	for {
+		select {
+		case <-r.shutdown:
+			return
+		case d := <-r.messages:
+			var msg rawRpcMessage
+			var response []byte
+			contentType := "text/json"
+			if err := json.Unmarshal(d.Body, &msg); err != nil {
+				response = []byte(fmt.Sprintf(`{"result": false, "error": %q}`, err))
+			} else {
+				if fn, ok := r.handlers[msg.Cmd]; ok {
+					contentType, response = fn(d.ContentType, msg.Payload)
+				}
 			}
-		}
-		if response != nil {
-			if err := r.channel.Publish(
-				"",        // exchange
-				d.ReplyTo, // routing key
-				false,     // mandatory
-				false,     // immediate
-				amqp.Publishing{
-					ContentType:   contentType,
-					CorrelationId: d.CorrelationId,
-					Body:          []byte(response),
-				}); err != nil {
-				log.Printf("Error sending response: %s", err)
+			if response != nil {
+				if err := r.channel.Publish(
+					"",        // exchange
+					d.ReplyTo, // routing key
+					false,     // mandatory
+					false,     // immediate
+					amqp.Publishing{
+						ContentType:   contentType,
+						CorrelationId: d.CorrelationId,
+						Body:          []byte(response),
+					}); err != nil {
+					log.Printf("Error sending response: %s", err)
+				}
 			}
+			d.Ack(false)
 		}
-		d.Ack(false)
 	}
 }

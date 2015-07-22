@@ -1,10 +1,12 @@
 package rpc
 
 import (
+	"encoding/json"
 	"errors"
-	"github.com/streadway/amqp"
 	"math/rand"
 	"time"
+
+	"github.com/streadway/amqp"
 )
 
 type rpcClient struct {
@@ -54,9 +56,16 @@ func (r *rpcClient) getCorrelationId() string {
 	return string(bytes)
 }
 
-func (r *rpcClient) Call(input []byte) ([]byte, error) {
+func (r *rpcClient) Call(command string, input []byte) ([]byte, error) {
+	body, err := json.Marshal(rawRpcMessage{
+		Cmd:     command,
+		Payload: input,
+	})
+	if err != nil {
+		return nil, err
+	}
 	correlationId := r.getCorrelationId()
-	err := r.channel.Publish(
+	err = r.channel.Publish(
 		"",     // exchange
 		r.name, // routing key
 		false,  // mandatory
@@ -65,7 +74,7 @@ func (r *rpcClient) Call(input []byte) ([]byte, error) {
 			ContentType:   r.contentType,
 			CorrelationId: correlationId,
 			ReplyTo:       r.queue.Name,
-			Body:          input,
+			Body:          body,
 		},
 	)
 	if err != nil {
