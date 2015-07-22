@@ -10,7 +10,7 @@ import (
 // Arguments: contentType, body. Return values: contentType, response
 type RPCHandler func(string, []byte) (string, []byte)
 
-type rpcServer struct {
+type RPCServer struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 	messages   <-chan amqp.Delivery
@@ -22,8 +22,8 @@ type rawRpcMessage struct {
 	Payload []byte `json:"payload"`
 }
 
-func NewServer(dsn, name string) (*rpcServer, error) {
-	rpc := &rpcServer{handlers: make(map[string]RPCHandler)}
+func NewServer(dsn, name string) (*RPCServer, error) {
+	rpc := &RPCServer{handlers: make(map[string]RPCHandler)}
 	var err error
 	rpc.connection, err = amqp.Dial(dsn)
 	if err != nil {
@@ -68,12 +68,12 @@ func NewServer(dsn, name string) (*rpcServer, error) {
 	return rpc, nil
 }
 
-func (r *rpcServer) AddHandler(name string, fn RPCHandler) *rpcServer {
+func (r *RPCServer) AddHandler(name string, fn RPCHandler) *RPCServer {
 	r.handlers[name] = fn
 	return r
 }
 
-func (r *rpcServer) RemoveHandler(name string) bool {
+func (r *RPCServer) RemoveHandler(name string) bool {
 	if _, ok := r.handlers[name]; ok {
 		delete(r.handlers, name)
 		return true
@@ -81,7 +81,14 @@ func (r *rpcServer) RemoveHandler(name string) bool {
 	return false
 }
 
-func (r *rpcServer) run() {
+func (r *RPCServer) Shutdown() {
+	r.shutdown <- struct{}{}
+	r.channel.Close()
+	r.connection.Close()
+	r = nil
+}
+
+func (r *RPCServer) run() {
 	for d := range r.messages {
 		var msg rawRpcMessage
 		var response []byte
