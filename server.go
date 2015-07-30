@@ -86,11 +86,16 @@ func (r *RPCServer) RemoveHandler(name string) bool {
 	return false
 }
 
-func (r *RPCServer) Shutdown() {
+func (r *RPCServer) Shutdown() error {
 	r.shutdown <- struct{}{}
-	r.channel.Close()
-	r.connection.Close()
+	if err := r.channel.Close(); err != nil {
+		return err
+	}
+	if err := r.connection.Close(); err != nil {
+		return err
+	}
 	r = nil
+	return nil
 }
 
 func (r *RPCServer) run() {

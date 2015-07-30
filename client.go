@@ -9,7 +9,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type rpcClient struct {
+type RPCClient struct {
 	name        string
 	contentType string
 	connection  *amqp.Connection
@@ -20,8 +20,8 @@ type rpcClient struct {
 
 var ErrTimeout = errors.New("Message receive timeout")
 
-func NewClient(dsn, name, contentType string) (*rpcClient, error) {
-	rpc := &rpcClient{
+func NewClient(dsn, name, contentType string) (*RPCClient, error) {
+	rpc := &RPCClient{
 		name:    name,
 		Timeout: 15 * time.Second,
 	}
@@ -48,7 +48,7 @@ func NewClient(dsn, name, contentType string) (*rpcClient, error) {
 	return rpc, nil
 }
 
-func (r *rpcClient) getCorrelationId() string {
+func (r *RPCClient) getCorrelationId() string {
 	bytes := make([]byte, 32)
 	for i := 0; i < 32; i++ {
 		bytes[i] = byte(65 + rand.Intn(25))
@@ -56,7 +56,7 @@ func (r *rpcClient) getCorrelationId() string {
 	return string(bytes)
 }
 
-func (r *rpcClient) Call(command string, input []byte) ([]byte, error) {
+func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 	body, err := json.Marshal(rawRpcMessage{
 		Cmd:     command,
 		Payload: input,
@@ -106,4 +106,15 @@ func (r *rpcClient) Call(command string, input []byte) ([]byte, error) {
 		break
 	}
 	return nil, ErrTimeout
+}
+
+func (r *RPCClient) Shutdown() error {
+	if err := r.channel.Close(); err != nil {
+		return err
+	}
+	if err := r.connection.Close(); err != nil {
+		return err
+	}
+	r = nil
+	return nil
 }
