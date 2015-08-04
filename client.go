@@ -65,6 +65,10 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 		return nil, err
 	}
 	correlationId := r.getCorrelationId()
+	r.channel, err = r.connection.Channel()
+	if err != nil {
+		return nil, err
+	}
 	err = r.channel.Publish(
 		"",     // exchange
 		r.name, // routing key
@@ -77,10 +81,6 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 			Body:          body,
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-	r.channel, err = r.connection.Channel()
 	if err != nil {
 		return nil, err
 	}
