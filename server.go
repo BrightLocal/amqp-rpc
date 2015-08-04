@@ -108,10 +108,17 @@ func (r *RPCServer) run() {
 			var response []byte
 			contentType := "text/json"
 			if err := json.Unmarshal(d.Body, &msg); err != nil {
-				response = []byte(fmt.Sprintf(`{"result": false, "error": %q}`, err))
+				response = []byte(fmt.Sprintf(`{"success": false, "error": %q}`, err))
+				// Broken message, discard
+				d.Ack(false)
 			} else {
 				if fn, ok := r.handlers[msg.Cmd]; ok {
+					d.Ack(false)
 					contentType, response = fn(d.ContentType, msg.Payload)
+				} else {
+					// Handler not registered, requeue the message
+					d.Nack(false, true)
+					continue
 				}
 			}
 			if response != nil {
@@ -127,8 +134,9 @@ func (r *RPCServer) run() {
 					}); err != nil {
 					log.Printf("Error sending response: %s", err)
 				}
+			} else {
+				log.Print("Not sending empty response")
 			}
-			d.Ack(false)
 		}
 	}
 }
