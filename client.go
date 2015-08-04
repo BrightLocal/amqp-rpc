@@ -80,6 +80,10 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.channel, err = r.connection.Channel()
+	if err != nil {
+		return nil, err
+	}
 	msgs, err := r.channel.Consume(
 		r.queue.Name, // queue
 		"",           // consume
