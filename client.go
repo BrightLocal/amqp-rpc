@@ -100,8 +100,10 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 	select {
 	case d := <-msgs:
 		if correlationId == d.CorrelationId {
+			d.Ack(false)
 			return d.Body, nil
 		}
+		d.Nack(false, true)
 	case <-timeout:
 		break
 	}
