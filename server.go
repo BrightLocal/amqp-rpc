@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/streadway/amqp"
@@ -20,6 +21,7 @@ type RPCServer struct {
 	messages   <-chan amqp.Delivery
 	shutdown   chan struct{}
 	handlers   map[string]RPCHandler
+	log        *log.Logger
 }
 
 type rawRpcMessage struct {
@@ -28,12 +30,12 @@ type rawRpcMessage struct {
 }
 
 func NewServer(dsn, name string) *RPCServer {
-	log.SetPrefix("[RPC Server] ")
 	rpc := &RPCServer{
 		dsn:       dsn,
 		queueName: name,
 		handlers:  make(map[string]RPCHandler),
 		shutdown:  make(chan struct{}),
+		log:       log.New(os.Stdout, "[RPC Server] ", log.LstdFlags),
 	}
 	rpc.connect()
 	go rpc.run()
@@ -45,13 +47,13 @@ func (rpc *RPCServer) connect() {
 	for {
 		rpc.connection, err = amqp.Dial(rpc.dsn)
 		if err != nil {
-			log.Printf("Error connecting: %s", err)
+			rpc.log.Printf("Error connecting: %s", err)
 			time.Sleep(time.Second)
 			continue
 		}
 		rpc.channel, err = rpc.connection.Channel()
 		if err != nil {
-			log.Printf("Error getting channel: %s", err)
+			rpc.log.Printf("Error getting channel: %s", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -64,7 +66,7 @@ func (rpc *RPCServer) connect() {
 			nil,           // arguments
 		)
 		if err != nil {
-			log.Printf("Error declaring queue: %s", err)
+			rpc.log.Printf("Error declaring queue: %s", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -74,7 +76,7 @@ func (rpc *RPCServer) connect() {
 			false, // global
 		)
 		if err != nil {
-			log.Printf("Error setting QOS: %s", err)
+			rpc.log.Printf("Error setting QOS: %s", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -88,11 +90,11 @@ func (rpc *RPCServer) connect() {
 			nil,    // args
 		)
 		if err != nil {
-			log.Printf("Error consuming: %s", err)
+			rpc.log.Printf("Error consuming: %s", err)
 			time.Sleep(time.Second)
 			continue
 		}
-		log.Printf("Connected")
+		rpc.log.Printf("Connected")
 		break
 	}
 }
@@ -157,7 +159,7 @@ func (r *RPCServer) run() {
 							CorrelationId: d.CorrelationId,
 							Body:          []byte(response),
 						}); err != nil {
-						log.Printf("Error sending response: %s", err)
+						r.log.Printf("Error sending response: %s", err)
 						time.Sleep(time.Second)
 						r.connect()
 						continue
@@ -165,7 +167,7 @@ func (r *RPCServer) run() {
 					break
 				}
 			} else {
-				log.Print("Not sending empty response")
+				r.log.Print("Not sending empty response")
 			}
 		}
 	}
