@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/streadway/amqp"
 )
@@ -12,6 +13,8 @@ import (
 type RPCHandler func(string, []byte) (string, []byte)
 
 type RPCServer struct {
+	dsn        string
+	queueName  string
 	connection *amqp.Connection
 	channel    *amqp.Channel
 	messages   <-chan amqp.Delivery
@@ -24,53 +27,72 @@ type rawRpcMessage struct {
 	Payload []byte `json:"payload"`
 }
 
-func NewServer(dsn, name string) (*RPCServer, error) {
+func NewServer(dsn, name string) *RPCServer {
 	rpc := &RPCServer{
-		handlers: make(map[string]RPCHandler),
-		shutdown: make(chan struct{}),
+		dsn:       dsn,
+		queueName: name,
+		handlers:  make(map[string]RPCHandler),
+		shutdown:  make(chan struct{}),
 	}
-	var err error
-	rpc.connection, err = amqp.Dial(dsn)
-	if err != nil {
-		return nil, err
-	}
-	rpc.channel, err = rpc.connection.Channel()
-	if err != nil {
-		return nil, err
-	}
-	q, err := rpc.channel.QueueDeclare(
-		name,  // name
-		false, // durable
-		false, // delete when unused
-		false, // exclusive
-		false, // noWait
-		nil,   // arguments
-	)
-	if err != nil {
-		return nil, err
-	}
-	err = rpc.channel.Qos(
-		1,     // prefetch count
-		0,     // prefetch size
-		false, // global
-	)
-	if err != nil {
-		return nil, err
-	}
-	rpc.messages, err = rpc.channel.Consume(
-		q.Name, // queue
-		"",     // consume
-		false,  // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
-	)
-	if err != nil {
-		return nil, err
-	}
+	rpc.connect()
 	go rpc.run()
-	return rpc, nil
+	return rpc
+}
+
+func (rpc *RPCServer) connect() {
+	var err error
+	for {
+		rpc.connection, err = amqp.Dial(rpc.dsn)
+		if err != nil {
+			log.Printf("Error connecting: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		rpc.channel, err = rpc.connection.Channel()
+		if err != nil {
+			log.Printf("Error getting channel: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		q, err := rpc.channel.QueueDeclare(
+			rpc.queueName, // name
+			false,         // durable
+			false,         // delete when unused
+			false,         // exclusive
+			false,         // noWait
+			nil,           // arguments
+		)
+		if err != nil {
+			log.Printf("Error declaring queue: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		err = rpc.channel.Qos(
+			1,     // prefetch count
+			0,     // prefetch size
+			false, // global
+		)
+		if err != nil {
+			log.Printf("Error setting QOS: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		rpc.messages, err = rpc.channel.Consume(
+			q.Name, // queue
+			"",     // consume
+			false,  // auto-ack
+			false,  // exclusive
+			false,  // no-local
+			false,  // no-wait
+			nil,    // args
+		)
+		if err != nil {
+			log.Printf("Error consuming: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		break
+	}
 }
 
 func (r *RPCServer) AddHandler(name string, fn RPCHandler) *RPCServer {
@@ -122,17 +144,23 @@ func (r *RPCServer) run() {
 				}
 			}
 			if response != nil {
-				if err := r.channel.Publish(
-					"",        // exchange
-					d.ReplyTo, // routing key
-					false,     // mandatory
-					false,     // immediate
-					amqp.Publishing{
-						ContentType:   contentType,
-						CorrelationId: d.CorrelationId,
-						Body:          []byte(response),
-					}); err != nil {
-					log.Printf("Error sending response: %s", err)
+				for {
+					if err := r.channel.Publish(
+						"",        // exchange
+						d.ReplyTo, // routing key
+						false,     // mandatory
+						false,     // immediate
+						amqp.Publishing{
+							ContentType:   contentType,
+							CorrelationId: d.CorrelationId,
+							Body:          []byte(response),
+						}); err != nil {
+						log.Printf("Error sending response: %s", err)
+						time.Sleep(time.Second)
+						r.connect()
+						continue
+					}
+					break
 				}
 			} else {
 				log.Print("Not sending empty response")
