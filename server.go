@@ -28,6 +28,7 @@ type rawRpcMessage struct {
 }
 
 func NewServer(dsn, name string) *RPCServer {
+	log.SetPrefix("[RPC Server] ")
 	rpc := &RPCServer{
 		dsn:       dsn,
 		queueName: name,
@@ -91,6 +92,7 @@ func (rpc *RPCServer) connect() {
 			time.Sleep(time.Second)
 			continue
 		}
+		log.Printf("Connected")
 		break
 	}
 }
