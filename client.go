@@ -3,7 +3,9 @@ package rpc
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/streadway/amqp"
@@ -11,11 +13,13 @@ import (
 
 type RPCClient struct {
 	name        string
+	dsn         string
 	contentType string
 	connection  *amqp.Connection
 	channel     *amqp.Channel
 	queue       amqp.Queue
 	Timeout     time.Duration
+	log         *log.Logger
 }
 
 var ErrTimeout = errors.New("Message receive timeout")
@@ -23,29 +27,44 @@ var ErrTimeout = errors.New("Message receive timeout")
 func NewClient(dsn, name, contentType string) (*RPCClient, error) {
 	rpc := &RPCClient{
 		name:    name,
+		dsn:     dsn,
 		Timeout: 15 * time.Second,
+		log:     log.New(os.Stdout, "[RPC Client] ", log.LstdFlags),
 	}
-	var err error
-	rpc.connection, err = amqp.Dial(dsn)
-	if err != nil {
-		return nil, err
-	}
-	rpc.channel, err = rpc.connection.Channel()
-	if err != nil {
-		return nil, err
-	}
-	rpc.queue, err = rpc.channel.QueueDeclare(
-		"",    // name
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // noWait
-		nil,   // arguments
-	)
-	if err != nil {
-		return nil, err
-	}
+	rpc.connect()
 	return rpc, nil
+}
+
+func (r *RPCClient) connect() {
+	var err error
+	for {
+		r.connection, err = amqp.Dial(r.dsn)
+		if err != nil {
+			r.log.Printf("Error connecting: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		r.channel, err = r.connection.Channel()
+		if err != nil {
+			r.log.Printf("Error getting channel: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		r.queue, err = r.channel.QueueDeclare(
+			"",    // name
+			false, // durable
+			false, // delete when unused
+			true,  // exclusive
+			false, // noWait
+			nil,   // arguments
+		)
+		if err != nil {
+			r.log.Printf("Error declaring a queue: %s", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		break
+	}
 }
 
 func (r *RPCClient) getCorrelationId() string {
@@ -64,52 +83,52 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	correlationId := r.getCorrelationId()
-	r.channel, err = r.connection.Channel()
-	if err != nil {
-		return nil, err
-	}
-	err = r.channel.Publish(
-		"",     // exchange
-		r.name, // routing key
-		false,  // mandatory
-		false,  // immediate
-		amqp.Publishing{
-			ContentType:   r.contentType,
-			CorrelationId: correlationId,
-			ReplyTo:       r.queue.Name,
-			Body:          body,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	msgs, err := r.channel.Consume(
-		r.queue.Name, // queue
-		"",           // consume
-		true,         // auto-ack
-		false,        // exclusive
-		false,        // no-local
-		false,        // no-wait
-		nil,          // args
-	)
-	if err != nil {
-		return nil, err
-	}
-	timeout := make(chan struct{})
-	go func() {
-		time.Sleep(r.Timeout)
-		timeout <- struct{}{}
-	}()
-	select {
-	case d := <-msgs:
-		if correlationId == d.CorrelationId {
-			d.Ack(false)
-			return d.Body, nil
+	for {
+		correlationId := r.getCorrelationId()
+		err = r.channel.Publish(
+			"",     // exchange
+			r.name, // routing key
+			false,  // mandatory
+			false,  // immediate
+			amqp.Publishing{
+				ContentType:   r.contentType,
+				CorrelationId: correlationId,
+				ReplyTo:       r.queue.Name,
+				Body:          body,
+			},
+		)
+		if err != nil {
+			r.connect()
+			continue
 		}
-		d.Nack(false, true)
-	case <-timeout:
-		break
+		msgs, err := r.channel.Consume(
+			r.queue.Name, // queue
+			"",           // consume
+			true,         // auto-ack
+			false,        // exclusive
+			false,        // no-local
+			false,        // no-wait
+			nil,          // args
+		)
+		if err != nil {
+			r.connect()
+			continue
+		}
+		timeout := make(chan struct{})
+		go func() {
+			time.Sleep(r.Timeout)
+			timeout <- struct{}{}
+		}()
+		select {
+		case d := <-msgs:
+			if correlationId == d.CorrelationId {
+				d.Ack(false)
+				return d.Body, nil
+			}
+			d.Nack(false, true)
+		case <-timeout:
+			break
+		}
 	}
 	return nil, ErrTimeout
 }
