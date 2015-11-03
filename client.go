@@ -38,6 +38,11 @@ func NewClient(dsn, name, contentType string) (*RPCClient, error) {
 func (r *RPCClient) connect() {
 	var err error
 	for {
+		if r.connection != nil {
+			if err := r.connection.Close(); err != nil {
+				r.log.Printf("Error closing connection: %s", err)
+			}
+		}
 		r.connection, err = amqp.DialConfig(r.dsn, amqp.Config{Properties: amqp.Table{"product": "RPC/Client." + r.name}})
 		if err != nil {
 			r.log.Printf("Error connecting: %s", err)
@@ -98,6 +103,7 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 			},
 		)
 		if err != nil {
+			r.log.Printf("Error publishing: %s", err)
 			r.connect()
 			continue
 		}
@@ -111,6 +117,7 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 			nil,          // args
 		)
 		if err != nil {
+			r.log.Printf("Error consuming: %s", err)
 			r.connect()
 			continue
 		}
