@@ -134,12 +134,5 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 }
 
 func (r *RPCClient) Shutdown() error {
-	if err := r.channel.Close(); err != nil {
-		return err
-	}
-	if err := r.connection.Close(); err != nil {
-		return err
-	}
-	r = nil
-	return nil
+	return r.connection.Close()
 }

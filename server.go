@@ -114,14 +114,7 @@ func (r *RPCServer) RemoveHandler(name string) bool {
 
 func (r *RPCServer) Shutdown() error {
 	r.shutdown <- struct{}{}
-	if err := r.channel.Close(); err != nil {
-		return err
-	}
-	if err := r.connection.Close(); err != nil {
-		return err
-	}
-	r = nil
-	return nil
+	return r.connection.Close()
 }
 
 func (r *RPCServer) run() {
