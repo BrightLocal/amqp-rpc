@@ -45,7 +45,7 @@ func NewServer(dsn, name string) *RPCServer {
 func (rpc *RPCServer) connect() {
 	var err error
 	for {
-		rpc.connection, err = amqp.Dial(rpc.dsn)
+		rpc.connection, err = amqp.DialConfig(rpc.dsn, amqp.Config{Properties: amqp.Table{"product": "RPC/Server." + rpc.queueName}})
 		if err != nil {
 			rpc.log.Printf("Error connecting: %s", err)
 			time.Sleep(time.Second)
