@@ -134,10 +134,9 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 			}
 			d.Nack(false, true)
 		case <-timeout:
-			break
+			return nil, ErrTimeout
 		}
 	}
-	return nil, ErrTimeout
 }
 
 func (r *RPCClient) Shutdown() error {
