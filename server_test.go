@@ -7,7 +7,7 @@ import (
 
 func TestRPC(t *testing.T) {
 	t.SkipNow()
-	rpc, _ := NewServer("amqp://guest:guest@localhost:5672/", "rpc_queue")
+	rpc := NewServer("amqp://guest:guest@localhost:5672/", "rpc_queue")
 	rpc.AddHandler("test", myHandler)
 	finish := make(chan bool)
 	<-finish
