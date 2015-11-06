@@ -31,7 +31,6 @@ func NewClient(dsn, name, contentType string) (*RPCClient, error) {
 		Timeout: 15 * time.Second,
 		log:     log.New(os.Stdout, "[RPC Client] ", log.LstdFlags),
 	}
-	rpc.connect()
 	return rpc, nil
 }
 
@@ -88,8 +87,9 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	correlationId := r.getCorrelationId()
+	r.connect()
 	for {
-		correlationId := r.getCorrelationId()
 		err = r.channel.Publish(
 			"",     // exchange
 			r.name, // routing key
