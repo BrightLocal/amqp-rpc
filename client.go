@@ -37,16 +37,13 @@ func NewClient(dsn, name, contentType string) (*RPCClient, error) {
 func (r *RPCClient) connect() {
 	var err error
 	for {
-		if r.connection != nil {
-			if err := r.connection.Close(); err != nil {
-				r.log.Printf("Error closing connection: %s", err)
+		if r.connection == nil {
+			r.connection, err = amqp.DialConfig(r.dsn, amqp.Config{Properties: amqp.Table{"product": "RPC/Client." + r.name}})
+			if err != nil {
+				r.log.Printf("Error connecting: %s", err)
+				time.Sleep(time.Second)
+				continue
 			}
-		}
-		r.connection, err = amqp.DialConfig(r.dsn, amqp.Config{Properties: amqp.Table{"product": "RPC/Client." + r.name}})
-		if err != nil {
-			r.log.Printf("Error connecting: %s", err)
-			time.Sleep(time.Second)
-			continue
 		}
 		r.channel, err = r.connection.Channel()
 		if err != nil {
@@ -57,7 +54,7 @@ func (r *RPCClient) connect() {
 		r.queue, err = r.channel.QueueDeclare(
 			"",    // name
 			false, // durable
-			false, // delete when unused
+			true,  // delete when unused
 			true,  // exclusive
 			false, // noWait
 			nil,   // arguments
@@ -87,9 +84,9 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	correlationId := r.getCorrelationId()
-	r.connect()
 	for {
+		r.connect()
+		correlationId := r.getCorrelationId()
 		err = r.channel.Publish(
 			"",     // exchange
 			r.name, // routing key
@@ -107,7 +104,7 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 			r.connect()
 			continue
 		}
-		msgs, err := r.channel.Consume(
+		deliveries, err := r.channel.Consume(
 			r.queue.Name, // queue
 			"",           // consume
 			true,         // auto-ack
@@ -126,17 +123,23 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 			time.Sleep(r.Timeout)
 			timeout <- struct{}{}
 		}()
-		select {
-		case d := <-msgs:
-			if correlationId == d.CorrelationId {
-				d.Ack(false)
-				return d.Body, nil
+		for {
+			select {
+			case d := <-deliveries:
+				if correlationId == d.CorrelationId {
+					d.Ack(false)
+					r.channel.Close()
+					for range deliveries {
+					}
+					return d.Body, nil
+				}
+				d.Nack(false, true)
+			case <-timeout:
+				return nil, ErrTimeout
 			}
-			d.Nack(false, true)
-		case <-timeout:
-			return nil, ErrTimeout
 		}
 	}
+	return nil, ErrTimeout
 }
 
 func (r *RPCClient) Shutdown() error {
