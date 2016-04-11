@@ -143,5 +143,8 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 }
 
 func (r *RPCClient) Shutdown() error {
-	return r.connection.Close()
+	if r.connection != nil {
+		return r.connection.Close()
+	}
+	return nil
 }
