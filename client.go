@@ -84,9 +84,9 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	correlationId := r.getCorrelationId()
 	for {
 		r.connect()
-		correlationId := r.getCorrelationId()
 		err = r.channel.Publish(
 			"",     // exchange
 			r.name, // routing key
@@ -101,7 +101,6 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 		)
 		if err != nil {
 			r.log.Printf("Error publishing: %s", err)
-			r.connect()
 			continue
 		}
 		deliveries, err := r.channel.Consume(
@@ -115,7 +114,6 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 		)
 		if err != nil {
 			r.log.Printf("Error consuming: %s", err)
-			r.connect()
 			continue
 		}
 		timeout := make(chan struct{})
