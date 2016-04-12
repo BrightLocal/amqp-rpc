@@ -29,7 +29,7 @@ func NewClient(dsn, name, contentType string) (*RPCClient, error) {
 		name:    name,
 		dsn:     dsn,
 		Timeout: 15 * time.Second,
-		log:     log.New(os.Stdout, "[RPC Client] ", log.LstdFlags),
+		log:     log.New(os.Stdout, "[RPC Client] ", log.LstdFlags|log.Lshortfile),
 	}
 	return rpc, nil
 }

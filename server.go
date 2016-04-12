@@ -35,7 +35,7 @@ func NewServer(dsn, name string) *RPCServer {
 		queueName: name,
 		handlers:  make(map[string]RPCHandler),
 		shutdown:  make(chan struct{}),
-		log:       log.New(os.Stdout, "[RPC Server] ", log.LstdFlags),
+		log:       log.New(os.Stdout, "[RPC Server] ", log.LstdFlags|log.Lshortfile),
 	}
 	rpc.connect()
 	go rpc.run()
