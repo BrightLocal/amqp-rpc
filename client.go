@@ -53,7 +53,7 @@ func (r *RPCClient) connect() {
 		r.channel, err = r.connection.Channel()
 		if err != nil {
 			r.log.Printf("Error getting channel: %s", err)
-			time.Sleep(time.Second)
+			r.connection = nil
 			continue
 		}
 		r.queue, err = r.channel.QueueDeclare(
