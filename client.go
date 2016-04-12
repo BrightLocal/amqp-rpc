@@ -37,11 +37,18 @@ func NewClient(dsn, name, contentType string) (*RPCClient, error) {
 func (r *RPCClient) connect() {
 	var err error
 	for {
-		r.connection, err = amqp.DialConfig(r.dsn, amqp.Config{Properties: amqp.Table{"product": "RPC/Client." + r.name}})
-		if err != nil {
-			r.log.Printf("Error connecting: %s", err)
-			time.Sleep(time.Second)
-			continue
+		if r.connection == nil {
+			r.connection, err = amqp.DialConfig(
+				r.dsn,
+				amqp.Config{
+					Properties: amqp.Table{"product": "RPC/Client." + r.name},
+				},
+			)
+			if err != nil {
+				r.log.Printf("Error connecting: %s", err)
+				time.Sleep(time.Second)
+				continue
+			}
 		}
 		r.channel, err = r.connection.Channel()
 		if err != nil {
