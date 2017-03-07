@@ -111,7 +111,7 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 		deliveries, err := r.channel.Consume(
 			r.queue.Name, // queue
 			"",           // consume
-			true,         // auto-ack
+			false,        // auto-ack
 			false,        // exclusive
 			false,        // no-local
 			false,        // no-wait
@@ -130,13 +130,17 @@ func (r *RPCClient) Call(command string, input []byte) ([]byte, error) {
 			select {
 			case d := <-deliveries:
 				if correlationId == d.CorrelationId {
-					d.Ack(false)
-					r.channel.Close()
-					for range deliveries {
+					if err := d.Ack(false); err != nil {
+						log.Printf("Error acking: %s", err)
+					}
+					if err := r.channel.Close(); err != nil {
+						log.Printf("Error closing channel: %s", err)
 					}
 					return d.Body, nil
 				}
-				d.Nack(false, true)
+				if err := d.Nack(false, true); err != nil {
+					log.Printf("Error nacking: %s", err)
+				}
 			case <-timeout:
 				return nil, ErrTimeout
 			}
